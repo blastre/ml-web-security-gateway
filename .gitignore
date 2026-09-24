@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Trained model artifacts are binary and fully regenerable:
+#   python -m mlwsg train
+# The manifest and feature metadata are kept so the artifact layout is
+# documented in the repository.
+artifacts/models/*.joblib
+artifacts/models/split.json
+
+# OS
+.DS_Store
+Thumbs.db
