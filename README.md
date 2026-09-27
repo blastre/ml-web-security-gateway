@@ -5,6 +5,29 @@ requests to a containerised app; the app's egress guard pins validated DNS resul
 every redirect. Blocked requests become redacted SQLite incidents. A headless Codex run can
 propose a fix for human review; it never changes code automatically. Not a production WAF.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  C["attacks.toml"] --> D["Generate synthetic dataset"] --> T["Train baselines"] --> M[(Saved model)]
+  U["Request: /fetch?url=…"] --> G{"Gateway: URL rules + ML score"}
+  M -. score .-> G
+  G -- allow --> A["vuln-app: /fetch"]
+  A --> E{"Egress guard: pin DNS IP; check every redirect"}
+  E -- allow --> P["public.lab / redirect fixture"]
+  G -- block --> I[(Redacted SQLite incidents)]
+  E -- block --> I
+  I --> V["Dashboard / CLI"]
+  I -- explicit analyse --> X["Codex: read-only scratch run"]
+  X -- report --> I
+  I -- human review --> H["Approve / reject decision only"]
+```
+
+The egress guard is a **library inside `vuln-app`**, not a separate proxy or network firewall.
+Only the gateway is published (`127.0.0.1:9100`). Metadata and internal services contain dummy
+data; blocked destinations are not contacted. The deliberately unsafe `/unsafe-fetch` baseline
+is accessible only from inside its container.
+
 ## Run
 
 Requires [uv](https://docs.astral.sh/uv/) and Docker Compose.
@@ -35,16 +58,11 @@ docker compose exec -T vuln-app uv run --no-sync python -c 'import httpx; print(
 Stop with `docker compose down`. Delete `artifacts/` to reset local data. The lab uses only dummy
 credentials and internal networks; do not point it at external systems.
 
-## Structure
+## Next
 
-| Path | Purpose |
-|---|---|
-| `docs/threat_model.md` / `src/mlwsg/attacks.toml` | Phase 1 threat model and 22-case catalogue |
-| `src/mlwsg/testbed.py`, `egress.py`, `compose.yaml` | Phase 2 lab and egress policy |
-| `dataset.py`, `models.py` | Phases 3–4 offline data, features and baselines |
-| `gateway.py`, `incidents.py`, `agent.py` | Phase 5 gateway, review and agent analysis |
-| `docs/handover.md` | Phase 6 evaluation and paper handover |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the code map and development commands,
+[docs/threat_model.md](docs/threat_model.md) for the attack catalogue, and
+[docs/handover.md](docs/handover.md) for the remaining evaluation and paper work.
 
-The dataset and held-out metrics are synthetic; they do not establish effectiveness on real
-traffic. Some catalogue variants are threat-model cases rather than live Docker fixtures. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for development commands. MIT licensed.
+The dataset and held-out metrics are synthetic, not evidence of real-traffic performance.
+Some catalogue variants are threat-model cases rather than live Docker fixtures. MIT licensed.
