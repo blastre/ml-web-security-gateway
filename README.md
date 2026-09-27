@@ -8,19 +8,17 @@ propose a fix for human review; it never changes code automatically. Not a produ
 ## Architecture
 
 ```mermaid
-flowchart LR
-  C["attacks.toml"] --> D["Generate synthetic dataset"] --> T["Train baselines"] --> M[(Saved model)]
-  U["Request: /fetch?url=…"] --> G{"Gateway: URL rules + ML score"}
-  M -. score .-> G
-  G -- allow --> A["vuln-app: /fetch"]
-  A --> E{"Egress guard: pin DNS IP; check every redirect"}
-  E -- allow --> P["public.lab / redirect fixture"]
-  G -- block --> I[(Redacted SQLite incidents)]
-  E -- block --> I
-  I --> V["Dashboard / CLI"]
-  I -- explicit analyse --> X["Codex: read-only scratch run"]
-  X -- report --> I
-  I -- human review --> H["Approve / reject decision only"]
+flowchart TD
+  U["Client<br/>/fetch?url=..."] --> G["Gateway<br/>rules + ML score"]
+  M["Model<br/>trained offline"] -.-> G
+  G -->|allow| A["vuln-app"]
+  G -->|block| I[("Incident store<br/>redacted SQLite")]
+  A --> E["Egress guard<br/>pinned DNS + redirect checks"]
+  E -->|allow| P["Public lab service"]
+  E -->|block| I
+  I --> D["Dashboard / CLI"]
+  D -->|analyse| X["Codex<br/>read-only"]
+  X -->|report| H["Human review<br/>approve / reject"]
 ```
 
 The egress guard is a **library inside `vuln-app`**, not a separate proxy or network firewall.
