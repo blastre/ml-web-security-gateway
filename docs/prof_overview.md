@@ -87,4 +87,3 @@ A local Docker lab stands in for a cloud VM. The metadata service is fake and ho
 4. **Scope.** Keep the AI-agent part, or concentrate on the two-layer gateway?
 5. **Comparison.** Should we compare against existing tools, such as open-source egress proxies like
    Stripe's Smokescreen and the clouds' built-in metadata protections?
-6. **Target.** Which venue (course report, student/workshop paper, or conference) and what timeline fit best?
