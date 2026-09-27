@@ -1,9 +1,9 @@
 # Threat Model (Phase 1)
 
-This document defines what the gateway protects, who attacks it and how. It is the source for
-the paper's *Threat Model* section. Every attack listed here gets a testbed case in Phase 2 and a
-dataset family in Phase 4. The machine-readable catalogue is `src/mlwsg/attacks.toml`
-(`uv run mlwsg attacks`).
+This document defines what the gateway protects, who attacks it and how. It informs the paper's
+*Threat Model* section. Every catalogue attack becomes a synthetic dataset family; the Docker
+POC exercises representative cases, not every catalogue technique live. The machine-readable
+catalogue is `src/mlwsg/attacks.toml` (`uv run mlwsg attacks`).
 
 ## 1. System under study
 

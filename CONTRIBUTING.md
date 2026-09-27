@@ -1,39 +1,22 @@
 # Contributing
 
-## Setup
-
-Use [uv](https://docs.astral.sh/uv/) for everything; do not use pip or a manually created venv.
+Python 3.12; manage the environment and run commands with [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync                 # install project and dev dependencies
-uv add <package>        # add a runtime dependency
-uv add --dev <package>  # add a dev dependency
-```
-
-Commit `pyproject.toml` and `uv.lock` together.
-
-## Checks
-
-Run before every push:
-
-```bash
+uv sync
 uv run ruff format .
 uv run ruff check .
 uv run pytest
+uv run mlwsg generate && uv run mlwsg train
+docker compose up --build -d
+docker compose down
 ```
 
-## Adding an attack
+The attack catalogue is `src/mlwsg/attacks.toml`; new entries need a unique `Axx` ID, declared
+target and layer, plus a case in the threat model. Keep synthetic dataset families grouped across
+train/test. Record model metrics honestly; this is a research POC, not a security guarantee.
 
-1. Append an `[[attacks]]` entry to `src/mlwsg/attacks.toml` with the next `Axx` ID.
-2. Set `resolves_to` to the address the app finally connects to, and `layers` to the boundary
-   expected to stop it.
-3. Update the table in `docs/threat_model.md` section 5.
-4. `uv run pytest` must pass. It checks that literal payloads really reach `resolves_to`.
-
-## Conventions
-
-* Branch per phase (`phase-N-<topic>`), PR against `main`.
-* Prefer standard library and well-known packages over custom code.
-* Keep comments for the non-obvious; results and design decisions go in `docs/`, since they feed
-  the paper.
-* Lab only: dummy credentials, no scanning of third-party systems.
+Only the gateway port is published (loopback). Use dummy credentials, never scan external hosts,
+and never apply an agent proposal without human review and isolated retesting. Commit
+`pyproject.toml` and `uv.lock` together. Branch work stays on `phase-1-threat-model` until the
+open PR is reviewed.

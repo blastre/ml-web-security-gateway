@@ -1,49 +1,50 @@
-# ML Web Security Gateway
+# ML Web Security Gateway (research POC)
 
-Proof-of-concept for a research paper: a hybrid gateway that detects and blocks **SSRF** and
-**cloud metadata** attacks, plus a restricted AI agent that analyses blocked incidents and
-proposes fixes for human review. Runs only in a local Docker lab with dummy credentials. Not a
-production WAF.
+A local, synthetic demonstration of SSRF prevention: an inbound rules + ML gateway forwards
+requests to a containerised app; the app's egress guard pins validated DNS results and checks
+every redirect. Blocked requests become redacted SQLite incidents. A headless Codex run can
+propose a fix for human review; it never changes code automatically. Not a production WAF.
 
-```
-request → inbound gateway (rules + ML) → web app → egress guard (DNS, redirects) → allowed target
-                     └──────── blocked incident → sanitised package → agent → human review
-```
+## Run
 
-## Status
-
-| Phase | Deliverable | State |
-|---|---|---|
-| 1 | Threat model and attack catalogue | done |
-| 2 | Docker testbed and security policies | planned |
-| 3 | Dataset generation | planned |
-| 4 | Features and models | planned |
-| 5 | Gateway and agent integration | planned |
-| 6 | Evaluation and paper | planned |
-
-## Quick start
-
-Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Requires [uv](https://docs.astral.sh/uv/) and Docker Compose.
 
 ```bash
-uv sync                               # create .venv with Python 3.12 and dev tools
-uv run mlwsg attacks                  # list the attack catalogue
-uv run mlwsg attacks --layer egress   # attacks only the egress guard can stop
-uv run mlwsg assets                   # protected assets and address ranges
-uv run pytest                         # verify the catalogue
+uv sync
+uv run mlwsg generate                 # synthetic dataset (artifacts/dataset.csv)
+uv run mlwsg train                    # saved baselines + held-out metrics
+uv run pytest                         # local checks
+docker compose up --build -d          # isolated lab; only gateway published on loopback
+curl -G --data-urlencode 'url=http://public.lab/ok' http://127.0.0.1:9100/fetch
+curl -G --data-urlencode 'url=http://169.254.169.254/computeMetadata/v1/' http://127.0.0.1:9100/fetch
+curl -G --data-urlencode 'url=http://redirect.attacker.lab/r?to=http://169.254.169.254/computeMetadata/v1/' http://127.0.0.1:9100/fetch
 ```
 
-## Layout
+Open <http://127.0.0.1:9100/> to inspect incidents. `uv run mlwsg incidents` lists them;
+`uv run mlwsg incident 1 show` displays one. To analyse one **explicitly**, install/authenticate
+Codex on the host and run `uv run mlwsg incident 1 analyse`. Review its report, then record a
+human decision with `uv run mlwsg incident 1 approve` or `reject`. Approval records a decision;
+there is **no automatic patch application or deployment**.
 
-| Path | Contents |
+The unguarded baseline is opt-in and reachable only inside `vuln-app`. To see a dummy token leak:
+
+```bash
+docker compose exec -T vuln-app uv run --no-sync python -c 'import httpx; print(httpx.get("http://127.0.0.1:8000/unsafe-fetch", params={"url":"http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token"}).json())'
+```
+
+Stop with `docker compose down`. Delete `artifacts/` to reset local data. The lab uses only dummy
+credentials and internal networks; do not point it at external systems.
+
+## Structure
+
+| Path | Purpose |
 |---|---|
-| `docs/threat_model.md` | Assets, adversary, trust boundaries, attacks, goals (paper §Threat Model) |
-| `src/mlwsg/attacks.toml` | Machine-readable attack catalogue |
-| `src/mlwsg/catalogue.py` | Typed loader used by later phases |
-| `tests/` | Checks that every payload targets what it claims |
+| `docs/threat_model.md` / `src/mlwsg/attacks.toml` | Phase 1 threat model and 22-case catalogue |
+| `src/mlwsg/testbed.py`, `egress.py`, `compose.yaml` | Phase 2 lab and egress policy |
+| `dataset.py`, `models.py` | Phases 3–4 offline data, features and baselines |
+| `gateway.py`, `incidents.py`, `agent.py` | Phase 5 gateway, review and agent analysis |
+| `docs/handover.md` | Phase 6 evaluation and paper handover |
 
-## Safety
-
-Lab use only. Never point this at systems you do not own, and never use real cloud credentials.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. License: MIT.
+The dataset and held-out metrics are synthetic; they do not establish effectiveness on real
+traffic. Some catalogue variants are threat-model cases rather than live Docker fixtures. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for development commands. MIT licensed.
