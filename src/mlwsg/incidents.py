@@ -74,6 +74,19 @@ class IncidentStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )"""
             )
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL,
+                    verdict TEXT NOT NULL CHECK (verdict IN ('ssrf', 'benign')),
+                    technique_id TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    analysis TEXT NOT NULL,
+                    backend TEXT NOT NULL,
+                    incident_id INTEGER REFERENCES incidents(id),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.db_path, timeout=5)
@@ -150,3 +163,39 @@ class IncidentStore:
 
     def reject(self, id: int) -> None:
         self._transition(id, "analysed", "rejected")
+
+    def record_decision(
+        self,
+        url: str,
+        decision: dict,
+        incident_id: int | None = None,
+    ) -> int:
+        """Log an agent verdict (allowed or blocked) with a redacted URL and explanation."""
+        if decision.get("verdict") not in ("ssrf", "benign"):
+            raise ValueError("invalid verdict")
+        confidence = float(decision.get("confidence", 0.0))
+        if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            raise ValueError("confidence must be between 0 and 1")
+        with self._connect() as db:
+            cursor = db.execute(
+                "INSERT INTO decisions "
+                "(url, verdict, technique_id, confidence, analysis, backend, incident_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    redact_url(url),
+                    decision["verdict"],
+                    redact_text(str(decision.get("technique_id", "unknown")), 16),
+                    confidence,
+                    redact_text(str(decision.get("analysis", "")), 4000),
+                    redact_text(str(decision.get("backend", "")), 64),
+                    incident_id,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def decisions(self, limit: int = 100) -> "list[dict]":  # `list` is shadowed here
+        with self._connect() as db:
+            return [
+                dict(row)
+                for row in db.execute("SELECT * FROM decisions ORDER BY id DESC LIMIT ?", (limit,))
+            ]

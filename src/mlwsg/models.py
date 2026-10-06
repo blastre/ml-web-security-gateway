@@ -5,6 +5,7 @@ an egress policy or a measure of generalisation to real-world traffic.
 """
 
 import csv
+import math
 from functools import cache
 from ipaddress import ip_address
 from pathlib import Path
@@ -123,6 +124,7 @@ def train(dataset_path: str | Path, output_path: str | Path) -> dict:
 
     groups: dict[str, str] = {}
     samples: dict[str, list[tuple[list[float], int]]] = {"train": [], "test": []}
+    techniques: list[str] = []  # train-split technique label per row, for the multi-class model
     counts: dict[str, dict[str, int]] = {
         "train": {"benign": 0, "attack": 0},
         "test": {"benign": 0, "attack": 0},
@@ -136,6 +138,8 @@ def train(dataset_path: str | Path, output_path: str | Path) -> dict:
         groups[family] = split
         target = int(label)
         samples[split].append((url_features(row["url"]), target))
+        if split == "train":
+            techniques.append(family if target else "benign")
         counts[split]["attack" if target else "benign"] += 1
     if any(0 in counts[split].values() for split in samples):
         raise ValueError("both train and test splits must contain attack and benign examples")
@@ -150,6 +154,10 @@ def train(dataset_path: str | Path, output_path: str | Path) -> dict:
     logistic.fit(train_x, train_y)
     forest.fit(train_x, train_y)
     isolation.fit([features for features, label in samples["train"] if label == 0])
+    # Multi-class head for the agent's top-k technique predictions. It only knows
+    # train-split techniques; held-out families are "zero-day" for it by design.
+    technique_forest = RandomForestClassifier(n_estimators=100, random_state=20240501, n_jobs=1)
+    technique_forest.fit(train_x, techniques)
     classifiers = {
         "logistic_regression": _metrics(test_y, logistic.predict(test_x)),
         "random_forest": _metrics(test_y, forest.predict(test_x)),
@@ -173,6 +181,7 @@ def train(dataset_path: str | Path, output_path: str | Path) -> dict:
             "logistic_regression": logistic,
             "random_forest": forest,
             "isolation_forest": isolation,
+            "technique_forest": technique_forest,
             "classifiers": classifiers,
             "split": split_stats,
         },
@@ -182,13 +191,43 @@ def train(dataset_path: str | Path, output_path: str | Path) -> dict:
 
 
 @cache
-def _load_model(path: str):
+def load_artifact(path: str) -> dict:
     artifact = joblib.load(path)
     if tuple(artifact["feature_names"]) != FEATURE_NAMES:
         raise ValueError("model features do not match this version")
-    return artifact["logistic_regression"]
+    return artifact
 
 
 def predict_url(url: str, model_path: str | Path) -> float:
     """Return the logistic-regression attack probability from a trusted artifact."""
-    return float(_load_model(str(model_path)).predict_proba([url_features(url)])[0, 1])
+    model = load_artifact(str(model_path))["logistic_regression"]
+    return float(model.predict_proba([url_features(url)])[0, 1])
+
+
+CLASSIFIERS = ("logistic_regression", "random_forest", "isolation_forest", "technique_forest")
+
+
+def classify(url: str, model_path: str | Path, name: str, k: int = 3) -> list[tuple[str, float]]:
+    """Top-k (label, confidence) from one classifier, as IDS-Agent's classification tool.
+
+    Binary models return ``ssrf``/``benign``. The isolation forest has no probability, so
+    its anomaly margin is squashed into [0, 1]. The technique forest returns catalogue IDs.
+    """
+    if name not in CLASSIFIERS:
+        raise ValueError(f"unknown classifier: {name}")
+    artifact = load_artifact(str(model_path))
+    if name not in artifact:
+        raise ValueError(f"{name} missing from model artifact; rerun uv run mlwsg train")
+    features = [url_features(url)]
+    model = artifact[name]
+    if name == "isolation_forest":
+        margin = float(model.decision_function(features)[0])
+        anomaly = 1 / (1 + math.exp(12 * margin))
+        ranked = [("ssrf", anomaly), ("benign", 1 - anomaly)]
+    elif name == "technique_forest":
+        ranked = list(zip(model.classes_, model.predict_proba(features)[0], strict=True))
+    else:
+        attack = float(model.predict_proba(features)[0, 1])
+        ranked = [("ssrf", attack), ("benign", 1 - attack)]
+    ranked.sort(key=lambda pair: -pair[1])
+    return [(str(label), round(float(score), 4)) for label, score in ranked[:k]]

@@ -28,7 +28,88 @@ def main(argv: list[str] | None = None) -> None:
     incident.add_argument("action", choices=("show", "analyse", "approve", "reject"))
     incident.add_argument("--db", default="artifacts/incidents.sqlite")
     incident.add_argument("--provider", default="codex")
+    agent = sub.add_parser("agent", help="ask the SSRF agent: is this SSRF, which technique, why")
+    target = agent.add_mutually_exclusive_group(required=True)
+    target.add_argument("url", nargs="?")
+    target.add_argument("--line", type=int, help="analyse row N of --data instead of a URL")
+    agent.add_argument("--data", default="artifacts/dataset.csv")
+    agent.add_argument("--model", default="artifacts/models/model.joblib")
+    agent.add_argument("--backend", choices=("offline", "claude"), default="offline")
+    agent.add_argument("--llm-model", default="claude-opus-5-5")
+    agent.add_argument(
+        "--effort", choices=("low", "medium", "high", "xhigh", "max"), default="medium"
+    )
+    agent.add_argument(
+        "--sensitivity", choices=("aggressive", "balanced", "conservative"), default="balanced"
+    )
+    agent.add_argument(
+        "--resolver", choices=("lab", "system"), default="lab", help="lab = deterministic lab DNS"
+    )
+    agent.add_argument("--memory", help="long-term memory SQLite (see mlwsg memory seed)")
+    agent.add_argument("--no-knowledge", action="store_true")
+    agent.add_argument("--trace", action="store_true", help="include thoughts/actions/observations")
+    memory = sub.add_parser("memory", help="initialise the agent's long-term memory")
+    memory.add_argument("action", choices=("seed",))
+    memory.add_argument("--data", default="artifacts/dataset.csv")
+    memory.add_argument("--model", default="artifacts/models/model.joblib")
+    memory.add_argument("--memory", default="artifacts/agent_memory.sqlite")
+    memory.add_argument("--per-family", type=int, default=3)
+    evaluate = sub.add_parser("evaluate", help="benchmark the agent against its classifiers")
+    evaluate.add_argument("--data", default="artifacts/dataset.csv")
+    evaluate.add_argument("--model", default="artifacts/models/model.joblib")
+    evaluate.add_argument("--backend", choices=("offline", "claude"), default="offline")
+    evaluate.add_argument("--limit", type=int, help="cap held-out rows (LLM cost control)")
+    evaluate.add_argument("--output", default="artifacts/evaluation.json")
+    evaluate.add_argument(
+        "--external", help="extra test set CSV with url,label[,technique] columns"
+    )
     args = parser.parse_args(argv)
+    if args.command == "agent":
+        from mlwsg.memory import LongTermMemory
+        from mlwsg.ssrf_agent import SSRFAgent
+        from mlwsg.tools import LabResolver, dataset_line, system_resolver
+
+        url = args.url
+        if args.line is not None:
+            url = dataset_line(args.data, args.line)["url"]
+        ssrf_agent = SSRFAgent(
+            args.model,
+            backend=args.backend,
+            sensitivity=args.sensitivity,
+            resolver=LabResolver() if args.resolver == "lab" else system_resolver,
+            memory=LongTermMemory(args.memory) if args.memory else None,
+            use_knowledge=not args.no_knowledge,
+            llm_model=args.llm_model,
+            effort=args.effort,
+        )
+        print(json.dumps(ssrf_agent.analyse(url).to_dict(trace=args.trace), indent=2))
+        return
+    if args.command == "memory":
+        from mlwsg.evaluate import load_split, seed_memory
+        from mlwsg.memory import LongTermMemory
+        from mlwsg.ssrf_agent import SSRFAgent
+        from mlwsg.tools import LabResolver
+
+        store = LongTermMemory(args.memory)
+        seeder = SSRFAgent(args.model, resolver=LabResolver(), memory=store)
+        rows = load_split(args.data, "train", per_family=args.per_family)
+        stored = seed_memory(seeder, rows)
+        print(json.dumps({"path": args.memory, "sessions": len(rows), "stored": stored}))
+        return
+    if args.command == "evaluate":
+        from pathlib import Path
+
+        from mlwsg.evaluate import evaluate as run_evaluation
+        from mlwsg.evaluate import markdown
+
+        report = run_evaluation(
+            args.data, args.model, backend=args.backend, limit=args.limit, external=args.external
+        )
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(markdown(report))
+        print(f"\nFull report: {args.output}")
+        return
     if args.command == "generate":
         from mlwsg.dataset import generate as generate_dataset
 

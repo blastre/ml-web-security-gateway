@@ -5,5 +5,5 @@ ENV UV_NO_DEV=1 UV_COMPILE_BYTECODE=1 PYTHONUNBUFFERED=1
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 COPY lab-certs/ ./lab-certs/
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-dev --extra llm
 ENV PATH="/app/.venv/bin:$PATH"

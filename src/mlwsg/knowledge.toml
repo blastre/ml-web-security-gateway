@@ -1,0 +1,171 @@
+# Knowledge base for the SSRF agent's `knowledge_retrieval` tool (IDS-Agent Sec. 3.3,
+# "supportive documents"). Technique notes extend `attacks.toml`; guidance entries paraphrase
+# the OWASP SSRF Prevention Cheat Sheet and OWASP Top 10 A10:2021 (SSRF). Plain text only.
+
+[techniques.A01]
+summary = "Request to the cloud instance metadata service by its link-local IPv4 literal 169.254.169.254."
+indicators = "Host is 169.254.169.254; paths such as /computeMetadata/v1/ or /metadata/instance."
+impact = "Critical: metadata returns instance identity and short-lived service-account tokens."
+defence = "Block link-local 169.254.0.0/16 at egress; require metadata headers (GCP Metadata-Flavor, AWS IMDSv2 tokens)."
+
+[techniques.A02]
+summary = "AWS IMDSv1 credential path on the metadata address."
+indicators = "Path /latest/meta-data/iam/security-credentials/ on 169.254.169.254."
+impact = "Critical: returns temporary IAM role credentials (Capital One 2019 breach pattern)."
+defence = "Enforce IMDSv2 (session token, hop limit 1) and block the metadata address at egress."
+
+[techniques.A03]
+summary = "Metadata service reached through its DNS name metadata.google.internal instead of the IP."
+indicators = "Host metadata.google.internal (or metadata, metadata.internal); resolves to 169.254.169.254."
+impact = "Critical: same as the metadata literal, but evades IP-only deny lists."
+defence = "Deny metadata hostnames and validate the resolved address, not the name."
+
+[techniques.A04]
+summary = "IPv4 address written as a single decimal (dword) number, e.g. 2852039166 = 169.254.169.254."
+indicators = "Host is all digits with no dots; inet_aton accepts it."
+impact = "High: bypasses string deny lists that look for dotted quads."
+defence = "Canonicalise hosts with a strict parser before policy checks; reject non-canonical IPv4."
+
+[techniques.A05]
+summary = "IPv4 address written in hexadecimal, e.g. 0xa9fea9fe = 169.254.169.254."
+indicators = "Host starts with 0x; single label or dotted hex octets."
+impact = "High: filter bypass for internal or metadata addresses."
+defence = "Canonicalise and reject alternative IPv4 encodings; check the resolved address."
+
+[techniques.A06]
+summary = "IPv4 address with octal octets (leading zeros), e.g. 0251.0376.0251.0376."
+indicators = "Dotted host where every octet starts with 0 and has more digits."
+impact = "High: libc reads octal while naive filters read decimal (parser differential)."
+defence = "Reject leading-zero octets; compare the canonical address."
+
+[techniques.A07]
+summary = "Mixed-radix dotted IPv4 combining hex, octal and decimal octets."
+indicators = "Dotted host mixing 0x.., 0.. and plain decimal octets."
+impact = "High: obfuscates an internal destination from pattern filters."
+defence = "Strict canonical IPv4 parsing; validate the address actually connected to."
+
+[techniques.A08]
+summary = "Shortened IPv4 with omitted octets, e.g. 127.1 = 127.0.0.1."
+indicators = "Numeric host with fewer than four dotted parts; often with internal service ports such as 6379."
+impact = "High: reaches loopback services (Redis, admin consoles)."
+defence = "Reject non-canonical IPv4 forms; block loopback at egress."
+
+[techniques.A09]
+summary = "Unspecified address 0.0.0.0, which Linux routes to the local host."
+indicators = "Host 0.0.0.0 or 0, often with a local service port."
+impact = "High: reaches services bound on the application host."
+defence = "Treat 0.0.0.0/8 as non-public; block at egress."
+
+[techniques.A10]
+summary = "IPv6 loopback literal [::1]."
+indicators = "Bracketed IPv6 host ::1 or 0:0:0:0:0:0:0:1."
+impact = "High: IPv4-only filters miss IPv6 loopback."
+defence = "Apply the same deny ranges to IPv6; block ::1/128."
+
+[techniques.A11]
+summary = "IPv4-mapped IPv6 literal such as [::ffff:a9fe:a9fe] that maps to an IPv4 metadata or private address."
+indicators = "Bracketed host beginning ::ffff: followed by hex or dotted IPv4."
+impact = "High: IPv6 parsing hides an IPv4 internal target."
+defence = "Unwrap ipv4_mapped addresses before policy checks; block mapped addresses at egress."
+
+[techniques.A12]
+summary = "Metadata service over IPv6 (AWS fd00:ec2::254)."
+indicators = "Bracketed IPv6 host fd00:ec2::254."
+impact = "Critical: metadata access over the IPv6 endpoint."
+defence = "Block the IPv6 metadata address and unique-local fc00::/7 ranges."
+
+[techniques.A13]
+summary = "Percent-encoded host characters such as %31%36%39.254.169.254 that decode to an internal address."
+indicators = "Percent signs in the authority."
+impact = "High: decode-after-check differential."
+defence = "Reject percent-encoding in the host; decode once, then validate."
+
+[techniques.A14]
+summary = "Userinfo confusion: trusted.example@10.10.0.10 makes a trusted-looking name the username, not the host."
+indicators = "@ in the authority; the real host comes after the @."
+impact = "High: allow-list checks on the prefix are bypassed."
+defence = "Reject URLs with userinfo; parse with the same library used to connect."
+
+[techniques.A15]
+summary = "Parser differential with a backslash before @: urllib reads one host, WHATWG browsers and some clients read another."
+indicators = "Backslash in the URL authority, e.g. http://10.10.0.10\\@trusted.example/."
+impact = "High: validation and connection disagree about the destination."
+defence = "Reject backslashes and ambiguous authorities outright."
+
+[techniques.A16]
+summary = "Direct request to a private RFC 1918 IPv4 literal such as 10.10.0.10."
+indicators = "Host in 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16."
+impact = "High: reaches internal admin panels and data stores that trust the network."
+defence = "Deny private ranges at egress; allow-list the destinations the feature needs."
+
+[techniques.A17]
+summary = "Attacker-controlled domain whose DNS A record points to a private address."
+indicators = "Ordinary-looking hostname whose resolved address is private, loopback or link-local (also wildcard DNS like *.nip.io)."
+impact = "High: name-based allow and deny lists never see the internal IP."
+defence = "Resolve once, validate every answer, and pin the connection to the validated address."
+
+[techniques.A18]
+summary = "DNS rebinding: the first lookup returns a public address, a later lookup returns an internal one."
+indicators = "Repeated lookups of the same name return different answers, moving from public to private; very short TTL."
+impact = "Critical: time-of-check/time-of-use bypass of DNS validation."
+defence = "Pin the validated address in the socket; never resolve twice."
+
+[techniques.A19]
+summary = "Open redirect to the metadata service: a public URL answers 30x with Location pointing at 169.254.169.254."
+indicators = "Query parameter such as to=, next=, url= carrying an internal URL; redirect endpoint on an attacker host."
+impact = "Critical: the first hop looks public; the redirect reaches metadata."
+defence = "Disable automatic redirects or re-validate every hop's destination."
+
+[techniques.A20]
+summary = "Redirect with scheme downgrade: an https URL redirects to plain http on an internal service."
+indicators = "https outer URL whose redirect target is http:// to a private address or port such as 6379."
+impact = "High: internal plaintext services reached via a redirect chain."
+defence = "Re-validate scheme and destination on every redirect hop."
+
+[techniques.A21]
+summary = "file:// scheme reads local files such as /etc/passwd."
+indicators = "Scheme file."
+impact = "High: local file disclosure."
+defence = "Allow only http and https schemes."
+
+[techniques.A22]
+summary = "gopher:// lets an attacker send raw bytes to TCP services such as Redis (_INFO%0D%0A)."
+indicators = "Scheme gopher, often with CRLF-encoded payloads and port 6379 or 11211."
+impact = "Critical: protocol smuggling to internal services, potentially remote code execution."
+defence = "Allow only http and https schemes; block internal ports at egress."
+
+[[guidance]]
+title = "OWASP: what SSRF is"
+text = "Server-Side Request Forgery occurs when a web application fetches a remote resource without validating the user-supplied URL. It lets an attacker coerce the application to send a crafted request to an unexpected destination, even when protected by a firewall, VPN or network ACL. OWASP Top 10 2021 lists it as A10."
+
+[[guidance]]
+title = "OWASP: allow-list over deny-list"
+text = "When the application only needs to reach known partners, use an allow-list of hosts or IPs. Deny-lists of internal ranges are easily bypassed through alternative IP encodings (decimal, hex, octal), IPv6 forms, DNS names that resolve internally and redirects."
+
+[[guidance]]
+title = "OWASP: validate the resolved address"
+text = "Validate the IP addresses a domain resolves to, not just the domain name, and ensure every answer is public. Pin the connection to the validated address to defeat DNS rebinding, where a second resolution returns an internal address."
+
+[[guidance]]
+title = "OWASP: redirects"
+text = "Disable following of HTTP redirects in the fetching client, or validate the destination of every hop. An open redirect on a trusted public host turns an allowed URL into a request to an internal address."
+
+[[guidance]]
+title = "OWASP: schemes and parsers"
+text = "Only allow the http and https schemes; file, gopher, dict, ftp and ldap enable file reads and protocol smuggling. Parse the URL with the same library that makes the request, and reject ambiguous authorities containing userinfo, backslashes or percent-encoding."
+
+[[guidance]]
+title = "OWASP: cloud metadata"
+text = "Cloud metadata endpoints such as 169.254.169.254 and metadata.google.internal expose credentials. Block link-local addresses at the network layer and enforce IMDSv2 or metadata request headers so a plain GET cannot read tokens."
+
+[[guidance]]
+title = "OWASP: defence in depth"
+text = "Combine application-layer validation with network-layer egress filtering. Do not return raw responses to the client, and log blocked requests for review. Detection signals include internal destinations, unusual schemes, and URLs passed in parameters."
+
+[[guidance]]
+title = "Benign URL fetches"
+text = "Legitimate fetches target public hostnames on ports 80 or 443 with ordinary paths such as articles, images, documentation and APIs. A query parameter containing a public URL (for example a share or next link) is common and benign when the target is public."
+
+[[guidance]]
+title = "Unknown or zero-day SSRF variants"
+text = "New SSRF bypasses keep appearing: wildcard DNS services (nip.io, sslip.io, localtest.me) that resolve to embedded or loopback IPs, other cloud metadata addresses (Alibaba 100.100.100.200, Oracle 192.0.0.192), carrier-grade NAT ranges and unusual schemes such as dict or ftp. Treat any request whose final destination is non-public as SSRF even if the technique is not catalogued."

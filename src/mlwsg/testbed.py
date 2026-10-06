@@ -1,13 +1,14 @@
 """Synthetic HTTP services for the isolated SSRF lab; no real secrets or cloud APIs."""
 
 import os
+import re
 from ipaddress import ip_address
 
 import aiohttp
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from mlwsg.egress import Blocked, FetchError, Guard
+from mlwsg.egress import Blocked, FetchError, Guard, _system_resolve
 
 SERVICES = frozenset({"app", "metadata", "internal", "public", "redirect"})
 
@@ -44,6 +45,17 @@ def create_testbed_app(service: str) -> FastAPI:
             except FetchError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             return _result(fetched.status, fetched.body, fetched.content_type)
+
+        @app.get("/resolve")
+        async def resolve(host: str) -> dict:
+            """DNS answers for the gateway's agent. One lookup; nothing is connected to."""
+            if len(host) > 253 or not re.fullmatch(r"[A-Za-z0-9.-]+", host):
+                raise HTTPException(status_code=400, detail="invalid hostname")
+            try:
+                answers = await _system_resolve(host, 80)
+            except OSError:
+                answers = []
+            return {"host": host, "answers": list(dict.fromkeys(answers))[:16]}
 
         @app.get("/unsafe-fetch")
         async def unsafe_fetch(url: str, request: Request) -> dict:

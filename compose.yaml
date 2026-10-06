@@ -7,6 +7,10 @@ services:
       MLWSG_DB: /state/incidents.sqlite
       MLWSG_MODEL: /models/model.joblib
       MLWSG_APP: http://vuln-app:8000
+      MLWSG_AGENT_BACKEND: ${MLWSG_AGENT_BACKEND:-offline}
+      MLWSG_AGENT_SENSITIVITY: ${MLWSG_AGENT_SENSITIVITY:-balanced}
+      MLWSG_AGENT_MEMORY: /state/agent_memory.sqlite
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       UV_CACHE_DIR: /tmp/uv-cache
     volumes:
       - ./artifacts/models:/models:ro
