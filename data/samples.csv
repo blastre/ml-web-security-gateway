@@ -31,6 +31,15 @@ http://172.16.0.5:8080/actuator/env,1,unknown
 dict://10.10.0.11:6379/info,1,unknown
 https://shop.example.com/r?next=http://127.0.0.1:8080/,1,unknown
 http://trusted.example@0x7f000001/,1,unknown
+http://169.254.169.254/metadata/instance?api-version=2021-02-01,1,A23
+http://192.0.0.192/opc/v2/instance/,1,A24
+http://100.100.100.200/latest/meta-data/ram/security-credentials/,1,A25
+http://169.254.169.254/metadata/v1/,1,A26
+http://169.254.169.254/hetzner/v1/metadata,1,A27
+http://169.254.170.2/v2/credentials/,1,A28
+http://localhost:9001/2018-06-01/runtime/invocation/next,1,A29
+http://127.0.0.1:2379/v2/keys/?recursive=true,1,A30
+http://127.0.0.1:2375/v1.24/containers/json,1,A31
 https://www.example.com/blog/2026/release-notes,0,benign
 https://api.example.org/v1/users?page=2,0,benign
 https://cdn.example.net/fonts/inter.woff2,0,benign

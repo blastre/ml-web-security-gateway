@@ -134,6 +134,60 @@ indicators = "Scheme gopher, often with CRLF-encoded payloads and port 6379 or 1
 impact = "Critical: protocol smuggling to internal services, potentially remote code execution."
 defence = "Allow only http and https schemes; block internal ports at egress."
 
+[techniques.A23]
+summary = "Azure Instance Metadata Service on 169.254.169.254, reached with the header Metadata: true."
+indicators = "Host 169.254.169.254; path /metadata/instance with an api-version query parameter."
+impact = "Critical: returns instance details and, via /metadata/identity/oauth2/token, managed-identity access tokens."
+defence = "Block link-local 169.254.0.0/16 at egress; the required Metadata header does not make the destination safe."
+
+[techniques.A24]
+summary = "Oracle Cloud Infrastructure metadata on 192.0.0.192 (and the /opc/v2/ endpoint)."
+indicators = "Host 192.0.0.192; paths /latest/ or /opc/v2/instance/."
+impact = "Critical: exposes instance identity and principal credentials; 192.0.0.192 is not a link-local IP, so link-local-only deny lists miss it."
+defence = "Treat 192.0.0.0/24 (IETF Protocol Assignments) as non-public and block at egress; validate the resolved address, not the provider."
+
+[techniques.A25]
+summary = "Alibaba Cloud metadata on 100.100.100.200, including RAM role credentials."
+indicators = "Host 100.100.100.200; path /latest/meta-data/ram/security-credentials/."
+impact = "Critical: returns temporary RAM role credentials. 100.100.100.200 sits in 100.64.0.0/10 (CGNAT shared space), not RFC 1918."
+defence = "Treat carrier-grade NAT space 100.64.0.0/10 as non-public and block at egress."
+
+[techniques.A26]
+summary = "DigitalOcean Droplet metadata on 169.254.169.254."
+indicators = "Host 169.254.169.254; path /metadata/v1/ or /metadata/v1.json."
+impact = "High: exposes droplet identity, user-data (startup scripts) and network configuration."
+defence = "Block link-local 169.254.0.0/16 at egress regardless of provider."
+
+[techniques.A27]
+summary = "Hetzner Cloud metadata on 169.254.169.254."
+indicators = "Host 169.254.169.254; path /hetzner/v1/metadata."
+impact = "High: exposes instance id, private-network layout and public IP."
+defence = "Block link-local 169.254.0.0/16 at egress regardless of provider."
+
+[techniques.A28]
+summary = "AWS ECS/Fargate task IAM credentials on the link-local endpoint 169.254.170.2."
+indicators = "Host 169.254.170.2; path /v2/credentials/ or the relative URI from AWS_CONTAINER_CREDENTIALS_RELATIVE_URI."
+impact = "Critical: returns the task role's temporary IAM credentials, a distinct endpoint from the 169.254.169.254 IMDS."
+defence = "Block the whole 169.254.0.0/16 link-local range at egress, not just the single IMDS address."
+
+[techniques.A29]
+summary = "AWS Lambda runtime API on localhost:9001, reached from a custom runtime."
+indicators = "Host localhost (or 127.0.0.1) on port 9001; path /2018-06-01/runtime/invocation/next."
+impact = "High: lets an attacker read invocation events and interfere with the function's responses."
+defence = "Block loopback at egress; localhost is only caught after name resolution, so validate the resolved address."
+
+[techniques.A30]
+summary = "Kubernetes etcd API on 127.0.0.1:2379 (or a node IP)."
+indicators = "Loopback or node host on port 2379; paths /version or /v2/keys/?recursive=true."
+impact = "Critical: etcd can hold API keys, service-account tokens and the full cluster state."
+defence = "Block loopback and internal node addresses at egress; require client-certificate auth on etcd."
+
+[techniques.A31]
+summary = "Docker Engine API on the unauthenticated TCP socket 127.0.0.1:2375."
+indicators = "Loopback or internal host on port 2375 (or 2376); paths /v1.24/containers/json, /images/json."
+impact = "Critical: full control of the Docker daemon allows container escape and host takeover."
+defence = "Never expose the daemon on a TCP socket; block loopback and internal ports at egress."
+
 [[guidance]]
 title = "OWASP: what SSRF is"
 text = "Server-Side Request Forgery occurs when a web application fetches a remote resource without validating the user-supplied URL. It lets an attacker coerce the application to send a crafted request to an unexpected destination, even when protected by a firewall, VPN or network ACL. OWASP Top 10 2021 lists it as A10."

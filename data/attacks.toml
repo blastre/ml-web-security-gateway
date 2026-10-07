@@ -3,8 +3,14 @@
 # `resolves_to` is the address the application finally connects to inside the lab.
 
 [assets.metadata]
-description = "Emulated cloud metadata service holding dummy credentials"
-networks = ["169.254.169.254/32", "fd00:ec2::254/128"]
+description = "Emulated cloud metadata/credential services holding dummy secrets (AWS, GCP, Azure, Oracle, Alibaba, DigitalOcean, Hetzner, ECS)"
+networks = [
+  "169.254.169.254/32",  # AWS/GCP/Azure/DigitalOcean/Hetzner IMDS
+  "fd00:ec2::254/128",   # AWS IMDS over IPv6
+  "169.254.170.2/32",    # AWS ECS/Fargate task-credentials endpoint
+  "192.0.0.192/32",      # Oracle Cloud Infrastructure metadata
+  "100.100.100.200/32",  # Alibaba Cloud metadata
+]
 
 [assets.internal]
 description = "Private lab services (admin panel, Redis-like store)"
@@ -216,3 +222,97 @@ payload = "gopher://10.10.0.11:6379/_INFO%0D%0A"
 asset = "internal"
 resolves_to = "10.10.0.11"
 layers = ["inbound", "egress"]
+
+# --- Multi-cloud and orchestrator credential/metadata endpoints -------------------
+# These extend the AWS+GCP core (A01-A03) to the rest of the provider landscape in
+# PayloadsAllTheThings' "SSRF URL for Cloud Instances". The gateway needs no
+# per-provider signature: the egress guard blocks them because every destination is a
+# non-public address (link-local, private, CGNAT shared space or loopback).
+
+[[attacks]]
+id = "A23"
+technique = "Azure IMDS"
+vector = "literal"
+payload = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+note = "Azure Instance Metadata Service; real requests also carry the header Metadata: true"
+
+[[attacks]]
+id = "A24"
+technique = "Oracle Cloud metadata"
+vector = "literal"
+payload = "http://192.0.0.192/opc/v2/instance/"
+asset = "metadata"
+resolves_to = "192.0.0.192"
+layers = ["inbound", "egress"]
+note = "OCI metadata lives on 192.0.0.192 (IETF Protocol Assignments range), not a link-local IP"
+
+[[attacks]]
+id = "A25"
+technique = "Alibaba Cloud metadata"
+vector = "literal"
+payload = "http://100.100.100.200/latest/meta-data/ram/security-credentials/"
+asset = "metadata"
+resolves_to = "100.100.100.200"
+layers = ["inbound", "egress"]
+note = "100.100.100.200 sits in 100.64.0.0/10 (CGNAT shared space); non-public but not RFC 1918"
+
+[[attacks]]
+id = "A26"
+technique = "DigitalOcean metadata"
+vector = "literal"
+payload = "http://169.254.169.254/metadata/v1/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A27"
+technique = "Hetzner Cloud metadata"
+vector = "literal"
+payload = "http://169.254.169.254/hetzner/v1/metadata"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+
+[[attacks]]
+id = "A28"
+technique = "AWS ECS/Fargate task credentials"
+vector = "literal"
+payload = "http://169.254.170.2/v2/credentials/"
+asset = "metadata"
+resolves_to = "169.254.170.2"
+layers = ["inbound", "egress"]
+note = "Task IAM role credentials endpoint; distinct link-local IP from the IMDS 169.254.169.254"
+
+[[attacks]]
+id = "A29"
+technique = "AWS Lambda runtime API"
+vector = "dns"
+payload = "http://localhost:9001/2018-06-01/runtime/invocation/next"
+asset = "loopback"
+resolves_to = "127.0.0.1"
+layers = ["egress"]
+note = "Custom-runtime invocation API; localhost resolves to loopback, caught only at egress"
+
+[[attacks]]
+id = "A30"
+technique = "Kubernetes etcd API"
+vector = "literal"
+payload = "http://127.0.0.1:2379/v2/keys/?recursive=true"
+asset = "loopback"
+resolves_to = "127.0.0.1"
+layers = ["inbound", "egress"]
+note = "etcd can expose API keys and internal addresses; reached via loopback or a node IP"
+
+[[attacks]]
+id = "A31"
+technique = "Docker daemon API"
+vector = "literal"
+payload = "http://127.0.0.1:2375/v1.24/containers/json"
+asset = "loopback"
+resolves_to = "127.0.0.1"
+layers = ["inbound", "egress"]
+note = "Unauthenticated Docker Engine API on the TCP socket; container escape / host takeover"
