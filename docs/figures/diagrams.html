@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Report Figures</title>
+<style>
+  body { background: #ffffff; color: #111; font-family: 'Times New Roman', serif; margin: 0; padding: 16px; }
+  .fig { display: block; width: fit-content; margin: 0 0 40px; padding: 10px; background: #fff; }
+  /* Gantt */
+  .gantt { display: grid; grid-template-columns: 236px repeat(16, 23px); font-size: 17px; border-top: 1px solid #999; border-left: 1px solid #999; }
+  .gantt div { border-right: 1px solid #ccc; border-bottom: 1px solid #ccc; padding: 7px 6px; min-height: 22px; }
+  .gantt .hd { background: #e7e6e6; font-weight: bold; text-align: center; font-size: 13px; padding: 7px 0; }
+  .gantt .cell { padding: 0; }
+  .done { background: #4a6d8c; }
+  .prog { background: #d9a441; }
+  .plan { background: repeating-linear-gradient(45deg, #b8c4d0, #b8c4d0 4px, #eef2f6 4px, #eef2f6 8px); }
+  .legend { display: flex; gap: 26px; justify-content: center; margin-top: 12px; font-size: 17px; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .sw { width: 22px; height: 14px; display: inline-block; border: 1px solid #888; }
+</style>
+</head>
+<body>
+
+<!-- Figure 1: pipeline flowchart -->
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  A([User-supplied URL]) --> B["<b>Stage 1: Fast rules</b><br/>IP canonicalisation,<br/>LR and RF scores"]
+  B -- uncertain --> D["<b>Stage 2: LLM agent</b><br/>tools, knowledge base,<br/>memory"]
+  B -- clearly benign --> E["<b>Stage 3: Egress guard</b><br/>check resolved IP<br/>and each redirect"]
+  B -- clearly malicious --> X[Block and log]
+  D -- not SSRF --> E
+  D -- SSRF --> X
+  E -- public --> OK([Allow])
+  E -- "internal or<br/>unresolvable" --> X
+
+  classDef stage fill:#dbe7f6,stroke:#2f5d8a,stroke-width:2px,color:#111;
+  classDef block fill:#f6e3e3,stroke:#9b2c2c,stroke-width:2px,color:#111;
+  classDef allow fill:#e3f1e6,stroke:#2f6b3a,stroke-width:2px,color:#111;
+  class B,D,E stage;
+  class X block;
+  class OK allow;
+</pre>
+</div>
+
+<!-- Figure 2: level-1 DFD -->
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  D1[("D1 Models")] --> P1
+  U[/"Client app"/] -- URL --> P1("1.0 Parse and score")
+  P1 -- obvious --> P3
+  P1 -- uncertain --> P2("2.0 Agent analysis")
+  D2[("D2 Catalogue")] --> P2
+  D3[("D3 Memory")] <--> P2
+  LLM[/"Claude API"/] <--> P2
+  P2 -- verdict --> P3("3.0 Egress check")
+  DNS[/"DNS"/] <--> P3
+  P3 --> P4("4.0 Record decision")
+  P4 --> D4[("D4 Incident log")]
+  P4 -. "allow / block" .-> U
+
+  classDef ext fill:#ffffff,stroke:#333,stroke-width:2px,color:#111;
+  classDef proc fill:#dbe7f6,stroke:#2f5d8a,stroke-width:2px,color:#111;
+  classDef store fill:#f2f2f2,stroke:#555,stroke-width:2px,color:#111;
+  class U,LLM,DNS ext;
+  class P1,P2,P3,P4 proc;
+  class D1,D2,D3,D4 store;
+</pre>
+</div>
+
+<!-- Figure 3: E-R diagram -->
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  R["<b>REQUEST</b><hr/>url (PK)<br/>resolved_ip<br/>risk_scores"]
+  M["<b>MEMORY_RECORD</b><hr/>url<br/>verdict<br/>technique_id (FK)"]
+  V["<b>VERDICT</b><hr/>label<br/>technique_id (FK)<br/>confidence, reason"]
+  I["<b>INCIDENT</b><hr/>id (PK)<br/>time<br/>action"]
+  T["<b>TECHNIQUE</b><hr/>id (PK)<br/>name<br/>defence"]
+  R -- "1 : 1<br/>receives" --- V
+  R -- "1 : 0..1<br/>logged as" --- I
+  V -- "N : 1<br/>matches" --- T
+  M -- "N : 0..1<br/>cites" --- T
+
+  classDef ent fill:#dbe7f6,stroke:#2f5d8a,stroke-width:2px,color:#111,text-align:left;
+  class R,M,V,I,T ent;
+</pre>
+</div>
+
+<!-- Figure 4: Gantt -->
+<div class="fig">
+  <div class="gantt" id="gantt"></div>
+  <div class="legend">
+    <span><i class="sw done"></i>Completed</span>
+    <span><i class="sw prog"></i>In progress</span>
+    <span><i class="sw plan"></i>Planned</span>
+  </div>
+</div>
+
+<script>
+  // [phase label, start week, length in weeks, status]. Edit spans to match the semester calendar.
+  const phases = [
+    ["1. Threat model, catalogue", 1, 2, "done"],
+    ["2. Lab, dataset, rules", 2, 3, "done"],
+    ["3. Baseline ML models", 4, 2, "done"],
+    ["4. LLM agent, memory", 6, 3, "done"],
+    ["5. Pipeline, CLI, tests", 8, 2, "done"],
+    ["6. Multi-cloud (A23–A31)", 10, 1, "done"],
+    ["7. Evaluation, latency", 11, 3, "prog"],
+    ["8. Production testing", 13, 4, "plan"],
+  ];
+  const WEEKS = 16;
+  const g = document.getElementById("gantt");
+  const cell = (cls, txt = "") => { const d = document.createElement("div"); d.className = cls; d.textContent = txt; g.appendChild(d); };
+  cell("hd", "Phase / Week");
+  for (let w = 1; w <= WEEKS; w++) cell("hd", String(w));
+  for (const [name, start, len, st] of phases) {
+    cell("task", name);
+    for (let w = 1; w <= WEEKS; w++) cell("cell" + (w >= start && w < start + len ? " " + st : ""));
+  }
+</script>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "base",
+    themeVariables: {
+      fontFamily: "Times New Roman, serif",
+      fontSize: "18px",
+      primaryColor: "#dbe7f6",
+      primaryTextColor: "#111111",
+      primaryBorderColor: "#2f5d8a",
+      lineColor: "#333333",
+      background: "#ffffff",
+      tertiaryColor: "#ffffff",
+      edgeLabelBackground: "#ffffff"
+    },
+    flowchart: { useMaxWidth: false, htmlLabels: true, curve: "basis", nodeSpacing: 22, rankSpacing: 34, padding: 10 },
+    er: { useMaxWidth: false, fontSize: 18, entityPadding: 12, minEntityWidth: 120 }
+  });
+</script>
+</body>
+</html>
