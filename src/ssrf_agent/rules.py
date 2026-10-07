@@ -5,6 +5,7 @@ import ipaddress
 import re
 import socket
 import tomllib
+import unicodedata
 from functools import cache
 from urllib.parse import parse_qsl, unquote, urlsplit
 
@@ -15,6 +16,23 @@ ALLOWED_SCHEMES = {"http", "https"}
 METADATA_IPS = {ipaddress.ip_address("169.254.169.254"), ipaddress.ip_address("fd00:ec2::254")}
 METADATA_HOSTS = {"metadata.google.internal", "metadata", "metadata.internal", "instance-data"}
 _NUMERIC_HOST = re.compile(r"^[0-9a-fx.]+$", re.IGNORECASE)
+_AUTHORITY = re.compile(r"^([a-z][a-z0-9+.-]*:)?[/\\]{2}([^/?#\\]*)", re.IGNORECASE)
+_FULL_STOPS = str.maketrans({"\u3002": ".", "\uff0e": ".", "\uff61": "."})
+
+
+def normalise(url: str) -> str:
+    """Map Unicode look-alikes in the authority to ASCII, as browsers do for hosts (UTS 46):
+    circled and fullwidth characters (ⓕ -> f, ① -> 1, ⑯ -> 16) and ideographic full stops."""
+    match = _AUTHORITY.match(url)
+    if not match or match.group(2).isascii():
+        return url
+    authority = unicodedata.normalize("NFKC", match.group(2)).translate(_FULL_STOPS)
+    return url[: match.start(2)] + authority + url[match.end(2) :]
+
+
+def split(url: str):
+    """urlsplit on the normalised URL. Raises ValueError when the URL cannot be parsed."""
+    return urlsplit(normalise(url))
 
 
 @cache
@@ -69,13 +87,13 @@ def resolve(host: str) -> list[str]:
 
 def embedded_urls(url: str) -> list[str]:
     """URLs carried in query parameters: what an open redirect would forward to."""
-    query = urlsplit(url.replace("\\", "/")).query
+    query = split(url.replace("\\", "/")).query
     return [v for _, v in parse_qsl(query) if re.match(r"^[a-z][a-z0-9+.-]*://", v, re.I)]
 
 
 def _hostname(url: str) -> str:
     try:
-        return urlsplit(url).hostname or ""
+        return split(url).hostname or ""
     except ValueError:
         return ""
 
@@ -94,7 +112,7 @@ def destinations(url: str) -> list[dict]:
         result.append(
             {
                 "role": role,
-                "scheme": urlsplit(target).scheme.lower(),
+                "scheme": split(target).scheme.lower(),
                 "host": host,
                 "addresses": addresses,
                 "public": bool(addresses) and all(a["asset"] == "public" for a in addresses),
@@ -110,7 +128,7 @@ def hints(url: str) -> list[dict]:
     def add(technique_id: str, signal: str) -> None:
         found.append({"technique_id": technique_id, "signal": signal})
 
-    parts = urlsplit(url)
+    parts = split(url)
     scheme, raw_host = parts.scheme.lower(), parts.netloc.rsplit("@", 1)[-1].rsplit(":", 1)[0]
     host = _hostname(url)
     if scheme == "file":
@@ -133,6 +151,8 @@ def hints(url: str) -> list[dict]:
         add("A11", "IPv4-mapped IPv6")
     if "@" in parts.netloc:
         add("A14", "userinfo before host")
+    if normalise(url) != url:
+        add("A32", "Unicode look-alike characters in host")
     if "\\" in url:
         add("A15", "backslash in authority")
     if host in METADATA_HOSTS:
@@ -145,7 +165,7 @@ def hints(url: str) -> list[dict]:
 def inbound_block(url: str) -> str | None:
     """Obvious blocks, decided without the models: bad schemes, plain internal literals and
     metadata names. Obfuscated encodings are left for the models and the agent."""
-    parts = urlsplit(url)
+    parts = split(url)
     if parts.scheme.lower() not in ALLOWED_SCHEMES:
         return f"scheme {parts.scheme or '(none)'}:// not allowed"
     host = _hostname(url)

@@ -188,6 +188,12 @@ indicators = "Loopback or internal host on port 2375 (or 2376); paths /v1.24/con
 impact = "Critical: full control of the Docker daemon allows container escape and host takeover."
 defence = "Never expose the daemon on a TCP socket; block loopback and internal ports at egress."
 
+[techniques.A32]
+summary = "Host written with Unicode look-alikes (circled or fullwidth digits and letters, ideographic full stops) that browsers map to an internal IP."
+indicators = "Non-ASCII characters in the host, such as ①⑥⑨。②⑤④ or ⓕⓕⓕⓕ, often inside an IPv6 bracket."
+impact = "High: string filters see no internal address, but the URL normalises to one, here the metadata IP."
+defence = "Normalise the host with UTS 46 / NFKC before any check, and fail closed on hosts that still do not parse."
+
 [[guidance]]
 title = "OWASP: what SSRF is"
 text = "Server-Side Request Forgery occurs when a web application fetches a remote resource without validating the user-supplied URL. It lets an attacker coerce the application to send a crafted request to an unexpected destination, even when protected by a firewall, VPN or network ACL. OWASP Top 10 2021 lists it as A10."

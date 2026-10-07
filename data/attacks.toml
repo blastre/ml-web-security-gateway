@@ -316,3 +316,13 @@ asset = "loopback"
 resolves_to = "127.0.0.1"
 layers = ["inbound", "egress"]
 note = "Unauthenticated Docker Engine API on the TCP socket; container escape / host takeover"
+
+[[attacks]]
+id = "A32"
+technique = "Unicode look-alike host"
+vector = "literal"
+payload = "http://[::ⓕⓕⓕⓕ:①⑥⑨。②⑤④。⑯⑨。②⑤④]:80/"
+asset = "metadata"
+resolves_to = "169.254.169.254"
+layers = ["inbound", "egress"]
+note = "Enclosed alphanumerics and ideographic full stops; UTS 46 maps the host to [::ffff:169.254.169.254]"

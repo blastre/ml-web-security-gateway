@@ -39,7 +39,10 @@ def fast_rules(url: str) -> tuple[Literal["allow", "block", "uncertain"], str, d
 
 async def decide(url: str, on_event: agent.Event | None = None) -> Decision:
     emit = on_event or (lambda kind, data: None)
-    route, reason, scores = fast_rules(url)
+    try:
+        route, reason, scores = fast_rules(url)
+    except ValueError as exc:  # the URL parser rejects it: fail closed
+        route, reason, scores = "block", f"unparseable URL ({exc}); blocked", {}
     emit("stage", ("fast_rules", route, reason))
     decision = Decision(url, "allow", "fast_rules", reason, scores, path=["fast_rules"])
     if route == "block":
@@ -60,7 +63,11 @@ async def decide(url: str, on_event: agent.Event | None = None) -> Decision:
         if decision.action == "block":
             return decision
     decision.path.append("egress")
-    if egress := rules.egress_block(url):
+    try:
+        egress = rules.egress_block(url)
+    except ValueError as exc:  # fail closed
+        egress = f"unparseable URL ({exc}); blocked"
+    if egress:
         decision.action, decision.stage, decision.reason = "block", "egress", egress
     emit("stage", ("egress", decision.action, egress or "destination is public"))
     return decision

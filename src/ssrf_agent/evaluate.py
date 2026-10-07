@@ -31,6 +31,14 @@ def metrics(y_true: list[int], y_pred: list[int]) -> dict:
     }
 
 
+def vote(url: str) -> int:
+    """Majority vote of the three classifiers; an unparseable URL counts as SSRF."""
+    try:
+        return int(sum(s >= 0.5 for s in models.scores(url).values()) >= 2)
+    except ValueError:
+        return 1
+
+
 async def run(path: Path, concurrency: int = 4, learn: bool = True, progress=None) -> dict:
     rows = load_csv(path)
     gate = asyncio.Semaphore(concurrency)
@@ -44,7 +52,7 @@ async def run(path: Path, concurrency: int = 4, learn: bool = True, progress=Non
 
     decisions = await asyncio.gather(*(one(row) for row in rows))
     y = [row["label"] for row in rows]
-    majority = [int(sum(s >= 0.5 for s in models.scores(r["url"]).values()) >= 2) for r in rows]
+    majority = [vote(r["url"]) for r in rows]
     full = [int(d.action == "block") for d in decisions]
     agent_rows = [(r, d) for r, d in zip(rows, decisions, strict=True) if d.verdict]
     if learn:  # long-term memory keeps only confirmed-correct agent sessions

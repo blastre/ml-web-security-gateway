@@ -8,7 +8,6 @@ import random
 import re
 import tomllib
 from functools import cache
-from urllib.parse import urlsplit
 
 import joblib
 import numpy as np
@@ -40,7 +39,7 @@ _KEYWORDS = ("metadata", "meta-data", "latest", "admin", "credentials", "token",
 
 def features(url: str) -> dict[str, float]:
     """Lexical feature vector (the paper's Preprocessing step)."""
-    parts = urlsplit(url)
+    parts = rules.split(url)
     host = (parts.hostname or "").lower()
     scheme = parts.scheme.lower()
     return {

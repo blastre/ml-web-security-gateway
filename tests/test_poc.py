@@ -38,6 +38,13 @@ def test_ip_notations_are_canonicalised(host, ip):
     assert str(rules.parse_ip(host)) == ip
 
 
+def test_unicode_lookalike_host_is_normalised():
+    url = "http://[::ⓕⓕⓕⓕ:①⑥⑨。②⑤④。⑯⑨。②⑤④]:80/"
+    assert rules.normalise(url) == "http://[::ffff:169.254.169.254]:80/"
+    assert "metadata" in rules.egress_block(url)
+    assert "A32" in {h["technique_id"] for h in rules.hints(url)}
+
+
 def test_public_destination_passes_egress():
     assert rules.egress_block("https://www.example.com/a") is None
     assert rules.egress_block("http://redirect.attacker.lab/r?to=http://public.lab/ok") is None
@@ -70,3 +77,10 @@ def test_uncertain_goes_to_agent_and_egress_still_applies(monkeypatch):
 def test_agent_failure_fails_closed(monkeypatch):
     d = run("http://localtest.me/admin", monkeypatch, fail=True)
     assert (d.action, d.stage) == ("block", "agent")
+
+
+def test_unparseable_url_fails_closed(monkeypatch):
+    url = "http://[::127.0.0.1]:6379+&@www.example.com#+@www.example.com/"
+    d = run(url, monkeypatch, fail=True)
+    assert (d.action, d.stage) == ("block", "fast_rules")
+    assert "unparseable" in d.reason

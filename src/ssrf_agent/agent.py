@@ -32,7 +32,7 @@ SERVER = "ssrf"
 
 class Verdict(BaseModel):
     verdict: Literal["ssrf", "benign"]
-    technique_id: str = Field(description="Catalogue ID A01-A22, 'unknown' or 'none' (benign)")
+    technique_id: str = Field(description="Catalogue ID A01-A32, 'unknown' or 'none' (benign)")
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(description="2-4 sentences citing the decisive evidence")
 
