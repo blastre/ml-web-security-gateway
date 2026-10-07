@@ -1,8 +1,0 @@
-**
-!pyproject.toml
-!uv.lock
-!README.md
-!src/
-!src/**
-!lab-certs/
-!lab-certs/**

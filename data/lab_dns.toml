@@ -1,0 +1,13 @@
+# Lab DNS: the answers the test environment's resolver gives. Checked before system DNS.
+# A list with two answers models DNS rebinding (first lookup public, second internal).
+# Keys starting with "*." match any subdomain.
+[hosts]
+"metadata.google.internal" = ["169.254.169.254"]
+"intranet.attacker.lab" = ["10.10.0.10"]
+"rebind.attacker.lab" = ["93.184.215.14", "169.254.169.254"]
+"redirect.attacker.lab" = ["93.184.215.20"]
+"public.lab" = ["93.184.215.30"]
+"trusted.example" = ["93.184.215.40"]
+"*.example.com" = ["93.184.215.14"]
+"*.example.org" = ["93.184.215.15"]
+"*.example.net" = ["93.184.215.16"]

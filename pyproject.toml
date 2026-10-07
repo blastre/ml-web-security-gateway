@@ -1,36 +1,35 @@
 [project]
-name = "ml-web-security-gateway"
+name = "ssrf-agent"
 version = "0.1.0"
-description = "Hybrid ML web security gateway for SSRF and cloud metadata attacks (research prototype)"
+description = "POC: SSRF detection agent based on the IDS-Agent architecture"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "aiohttp>=3.14.3",
-    "fastapi>=0.141.1",
-    "httpx>=0.28.1",
+    "claude-agent-sdk>=0.2.164",
     "joblib>=1.6.0",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "rich>=15.0.0",
     "scikit-learn>=1.9.1",
-    "uvicorn>=0.54.0",
+    "tldextract>=5.4.0",
+    "typer>=0.27.3",
 ]
 
 [project.scripts]
-mlwsg = "mlwsg.cli:main"
+ssrf-agent = "ssrf_agent.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.29,<0.12.0"]
 build-backend = "uv_build"
 
-[tool.uv.build-backend]
-module-name = "mlwsg"
-
-[dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-    "ruff>=0.16.9",
-]
-
 [tool.ruff]
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]

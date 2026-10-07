@@ -1,66 +1,73 @@
-# ML Web Security Gateway (research POC)
+# SSRF Agent (POC)
 
-A local, synthetic demonstration of SSRF prevention: an inbound rules + ML gateway forwards
-requests to a containerised app; the app's egress guard pins validated DNS results and checks
-every redirect. Blocked requests become redacted SQLite incidents. A headless Codex run can
-propose a fix for human review; it never changes code automatically. Not a production WAF.
+An LLM agent that decides whether a URL a web app is about to fetch is **Server-Side Request
+Forgery**, **which technique** it uses, and **why**. It follows the **IDS-Agent** architecture
+(Li et al., NeurIPS 2024 workshop), adapted from IoT traffic to SSRF as described in
+[docs/ssrf_agent_plan.md](docs/ssrf_agent_plan.md). The agent runs on **Sonnet 5.5** by
+default, and **Opus 5.5** can be selected.
 
-## Architecture
-
-```mermaid
-flowchart TD
-  U["Client<br/>/fetch?url=..."] --> G["Gateway<br/>rules + ML score"]
-  M["Model<br/>trained offline"] -.-> G
-  G -->|allow| A["vuln-app"]
-  G -->|block| I[("Incident store<br/>redacted SQLite")]
-  A --> E["Egress guard<br/>pinned DNS + redirect checks"]
-  E -->|allow| P["Public lab service"]
-  E -->|block| I
-  I --> D["Dashboard / CLI"]
-  D -->|analyse| X["Codex<br/>read-only"]
-  X -->|report| H["Human review<br/>approve / reject"]
+```text
+URL ─► Fast rules ── obvious ──────────────────────────────► allow / block
+           └─ uncertain (models disagree / medium score)
+                     ▼
+              AGENT: reason → call tools → observe → … → verdict + technique + reason
+                     ▼
+Egress guard (always on): blocks internal / metadata destinations; the agent cannot override it
 ```
 
-The egress guard is a **library inside `vuln-app`**, not a separate proxy or network firewall.
-Only the gateway is published (`127.0.0.1:9100`). Metadata and internal services contain dummy
-data; blocked destinations are not contacted. The deliberately unsafe `/unsafe-fetch` baseline
-is accessible only from inside its container.
+## How IDS-Agent maps to this code
+
+| IDS-Agent (paper) | Here |
+|---|---|
+| Core LLM, reasoning → action → observation loop | `agent.py` (Sonnet 5.5 / Opus 5.5) |
+| Data extraction and preprocessing | `models.features`: 16 lexical URL features |
+| Classification tools (several ML models) | `classify`: Logistic Regression, Random Forest, Isolation Forest |
+| Knowledge retrieval | `lookup_technique`: 22 catalogue techniques plus OWASP guidance (`data/knowledge.toml`) |
+| Long-term memory, Eq. 1 retrieval | `memory.py`: SQLite, 0.3·recency + 0.7·cosine, correct sessions only |
+| Sensitivity via the system prompt | `SSRF_AGENT_SENSITIVITY` = aggressive / balanced / conservative |
+| Structured final output | pydantic `Verdict` {verdict, technique_id, confidence, reason} |
+| *(new for SSRF)* | `url_rules` and `resolve_destination` (real IP, DNS rebinding, redirects, parser tricks) |
 
 ## Run
 
-Requires [uv](https://docs.astral.sh/uv/) and Docker Compose.
-
 ```bash
 uv sync
-uv run mlwsg generate                 # synthetic dataset (artifacts/dataset.csv)
-uv run mlwsg train                    # saved baselines + held-out metrics
-uv run pytest                         # local checks
-docker compose up --build -d          # isolated lab; only gateway published on loopback
-curl -G --data-urlencode 'url=http://public.lab/ok' http://127.0.0.1:9100/fetch
-curl -G --data-urlencode 'url=http://169.254.169.254/computeMetadata/v1/' http://127.0.0.1:9100/fetch
-curl -G --data-urlencode 'url=http://redirect.attacker.lab/r?to=http://169.254.169.254/computeMetadata/v1/' http://127.0.0.1:9100/fetch
+uv run ssrf-agent train                 # train the 3 classifiers
+uv run ssrf-agent interactive           # TUI: paste a URL or a sample number, `s` lists samples
+uv run ssrf-agent check 'http://localtest.me/admin'
+uv run ssrf-agent evaluate              # data/samples.csv through the full pipeline
+uv run ssrf-agent evaluate data/patt.csv   # any CSV with url,label (1 = SSRF)
+uv run pytest
 ```
 
-Open <http://127.0.0.1:9100/> to inspect incidents. `uv run mlwsg incidents` lists them;
-`uv run mlwsg incident 1 show` displays one. To analyse one **explicitly**, install/authenticate
-Codex on the host and run `uv run mlwsg incident 1 analyse`. Review its report, then record a
-human decision with `uv run mlwsg incident 1 approve` or `reject`. Approval records a decision;
-there is **no automatic patch application or deployment**.
-
-The unguarded baseline is opt-in and reachable only inside `vuln-app`. To see a dummy token leak:
+Configuration is read from environment variables or a `.env` file (see `config.py`):
 
 ```bash
-docker compose exec -T vuln-app uv run --no-sync python -c 'import httpx; print(httpx.get("http://127.0.0.1:8000/unsafe-fetch", params={"url":"http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token"}).json())'
+SSRF_AGENT_MODEL=claude-opus-5-5 SSRF_AGENT_SENSITIVITY=aggressive uv run ssrf-agent interactive
 ```
 
-Stop with `docker compose down`. Delete `artifacts/` to reset local data. The lab uses only dummy
-credentials and internal networks; do not point it at external systems.
+## Layout
 
-## Next
+| File | Role |
+|---|---|
+| `src/ssrf_agent/rules.py` | Fast rules, egress guard, IP canonicalisation, destination lookup, technique hints |
+| `src/ssrf_agent/models.py` | Features and the 3 classifiers |
+| `src/ssrf_agent/agent.py` | Agent: tools, system prompt, loop, verdict |
+| `src/ssrf_agent/memory.py` | Long-term memory |
+| `src/ssrf_agent/pipeline.py` | The flowchart above |
+| `src/ssrf_agent/evaluate.py` | Metrics: majority vote vs. full pipeline vs. agent |
+| `src/ssrf_agent/cli.py` | CLI and TUI |
+| `data/` | Catalogue, knowledge base, lab DNS, sample test set |
+| `docs/build_log.md` | What was built and measured at each step |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the code map and development commands,
-[docs/threat_model.md](docs/threat_model.md) for the attack catalogue, and
-[docs/handover.md](docs/handover.md) for the remaining evaluation and paper work.
+## Testing on PayloadsAllTheThings
 
-The dataset and held-out metrics are synthetic, not evidence of real-traffic performance.
-Some catalogue variants are threat-model cases rather than live Docker fixtures. MIT licensed.
+Save the SSRF payloads as `data/patt.csv` with columns `url,label` (label 1), and add benign
+URLs with label 0 so the false-alarm rate can be measured. Then run
+`uv run ssrf-agent evaluate data/patt.csv`.
+
+## Limits (POC)
+
+- The classifiers are trained on the 22-technique catalogue and synthetic benign URLs.
+- DNS for lab hostnames comes from `data/lab_dns.toml`; everything else uses system DNS.
+- Nothing is fetched: the egress guard checks where a request *would* go.
